@@ -4,6 +4,7 @@ import { FormEvent, useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
+import { notFound } from "next/navigation";
 
 type ProductForm = {
   title: string;
@@ -13,8 +14,13 @@ type ProductForm = {
   status: "판매중" | "예약중" | "판매완료";
 };
 
-export default function NewProductPage() {
+export default function EditProductPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const router = useRouter();
+  const [productId, setProductId] = useState<number | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>({
     title: "",
@@ -25,16 +31,18 @@ export default function NewProductPage() {
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 세션 확인 및 초기화
+  // 초기화 및 상품 데이터 로드
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      const currentUser = data.session?.user;
+      // 세션 확인
+      const { data: sessionData } = await supabase.auth.getSession();
+      const currentUser = sessionData.session?.user;
 
       if (!currentUser) {
         router.replace("/login");
@@ -42,6 +50,47 @@ export default function NewProductPage() {
       }
 
       setSessionUserId(currentUser.id);
+
+      // params에서 상품 ID 가져오기
+      const resolvedParams = await params;
+      const parsedId = parseInt(resolvedParams.id, 10);
+
+      if (isNaN(parsedId)) {
+        router.replace("/");
+        return;
+      }
+
+      setProductId(parsedId);
+
+      // 상품 데이터 로드
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", parsedId)
+        .single();
+
+      if (productError || !product) {
+        router.replace("/");
+        return;
+      }
+
+      // 본인 상품인지 확인
+      if (product.user_id !== currentUser.id) {
+        alert("본인의 상품만 수정할 수 있습니다.");
+        router.replace(`/products/${parsedId}`);
+        return;
+      }
+
+      // 폼 데이터 설정
+      setForm({
+        title: product.title,
+        description: product.description || "",
+        price: product.price.toString(),
+        location: product.location,
+        status: product.status as "판매중" | "예약중" | "판매완료",
+      });
+
+      setExistingImageUrl(product.image_url);
       setIsLoading(false);
     };
 
@@ -104,7 +153,10 @@ export default function NewProductPage() {
 
     if (uploadError) {
       // RLS 정책 오류인 경우 더 명확한 메시지 제공
-      if (uploadError.message.includes("row-level security") || uploadError.message.includes("policy")) {
+      if (
+        uploadError.message.includes("row-level security") ||
+        uploadError.message.includes("policy")
+      ) {
         throw new Error(
           `이미지 업로드 실패: Storage 정책이 설정되지 않았습니다. Supabase 대시보드에서 'product-images' 버킷의 Policies 탭에서 INSERT 정책을 추가해주세요. 자세한 내용은 README-SETUP.md를 참고하세요.`
         );
@@ -122,8 +174,8 @@ export default function NewProductPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!sessionUserId || !imageFile) {
-      setError("모든 필드를 입력하고 이미지를 업로드해주세요.");
+    if (!sessionUserId || !productId) {
+      setError("필수 정보가 누락되었습니다.");
       return;
     }
 
@@ -131,30 +183,42 @@ export default function NewProductPage() {
     setError(null);
 
     try {
-      // 이미지 업로드
-      const imageUrl = await uploadImage(imageFile);
+      let imageUrl = existingImageUrl;
 
-      // 상품 등록
-      const { error: insertError } = await supabase.from("products").insert({
-        user_id: sessionUserId,
-        title: form.title,
-        description: form.description || null,
-        price: parseInt(form.price.replace(/,/g, ""), 10),
-        location: form.location,
-        image_url: imageUrl,
-        status: form.status,
-      });
-
-      if (insertError) {
-        throw new Error(`상품 등록 실패: ${insertError.message}`);
+      // 새 이미지가 업로드된 경우
+      if (imageFile) {
+        imageUrl = await uploadImage(imageFile);
       }
 
-      // 성공 시 홈으로 이동
-      router.push("/");
+      if (!imageUrl) {
+        throw new Error("이미지 URL이 필요합니다.");
+      }
+
+      // 상품 수정
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({
+          title: form.title,
+          description: form.description || null,
+          price: parseInt(form.price.replace(/,/g, ""), 10),
+          location: form.location,
+          image_url: imageUrl,
+          status: form.status,
+        })
+        .eq("id", productId)
+        .eq("user_id", sessionUserId); // 본인 상품인지 다시 확인
+
+      if (updateError) {
+        throw new Error(`상품 수정 실패: ${updateError.message}`);
+      }
+
+      // 성공 시 상품 상세 페이지로 이동
+      router.push(`/products/${productId}`);
+      router.refresh();
     } catch (err) {
-      console.error("상품 등록 오류:", err);
+      console.error("상품 수정 오류:", err);
       setError(
-        err instanceof Error ? err.message : "상품 등록에 실패했습니다."
+        err instanceof Error ? err.message : "상품 수정에 실패했습니다."
       );
       setIsSubmitting(false);
     }
@@ -168,22 +232,24 @@ export default function NewProductPage() {
     );
   }
 
+  const displayImage = imagePreview || existingImageUrl;
+
   return (
     <section className="bg-gray-50 min-h-screen py-10">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm px-8 py-10 border border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">상품 등록</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">상품 수정</h1>
         <form className="space-y-6" onSubmit={handleSubmit}>
           {/* 이미지 업로드 */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">
               상품 이미지 <span className="text-red-500">*</span>
             </label>
-            {imagePreview ? (
+            {displayImage ? (
               <div className="relative">
                 <div className="relative w-full aspect-square bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
                   <Image
-                    src={imagePreview}
-                    alt="상품 미리보기"
+                    src={displayImage}
+                    alt="상품 이미지"
                     fill
                     className="object-cover"
                   />
@@ -193,7 +259,7 @@ export default function NewProductPage() {
                   onClick={handleImageRemove}
                   className="mt-2 text-sm text-red-600 hover:text-red-700"
                 >
-                  이미지 제거
+                  이미지 변경
                 </button>
               </div>
             ) : (
@@ -226,7 +292,6 @@ export default function NewProductPage() {
               accept="image/*"
               onChange={handleImageChange}
               className="hidden"
-              required
             />
           </div>
 
@@ -353,7 +418,7 @@ export default function NewProductPage() {
               disabled={isSubmitting}
               className="flex-1 bg-orange-600 text-white rounded-xl py-3 text-sm font-semibold hover:bg-orange-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? "등록 중..." : "상품 등록"}
+              {isSubmitting ? "수정 중..." : "상품 수정"}
             </button>
           </div>
         </form>

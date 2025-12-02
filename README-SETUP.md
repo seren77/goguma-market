@@ -20,6 +20,57 @@ Supabase 대시보드의 SQL Editor에서 `supabase/schema.sql` 파일의 내용
 supabase db push
 ```
 
+### 기존 테이블이 있는 경우 마이그레이션
+
+기존에 `products` 테이블이 있다면, 다음 SQL을 실행하여 컬럼을 추가하세요:
+
+```sql
+-- user_id 컬럼 추가
+ALTER TABLE products 
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+-- description 컬럼 추가
+ALTER TABLE products 
+ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- user_id에 NOT NULL 제약조건 추가 (기존 데이터가 있다면 먼저 데이터를 처리해야 함)
+-- ALTER TABLE products ALTER COLUMN user_id SET NOT NULL;
+
+-- 인덱스 추가
+CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id);
+
+-- RLS 활성화 및 정책 추가
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+
+-- 기존 정책이 있다면 삭제 후 재생성
+DROP POLICY IF EXISTS "모든 사용자가 상품 조회 가능" ON products;
+DROP POLICY IF EXISTS "인증된 사용자가 상품 등록 가능" ON products;
+DROP POLICY IF EXISTS "사용자가 자신의 상품만 수정 가능" ON products;
+DROP POLICY IF EXISTS "사용자가 자신의 상품만 삭제 가능" ON products;
+
+-- 정책 재생성
+CREATE POLICY "모든 사용자가 상품 조회 가능"
+  ON products
+  FOR SELECT
+  USING (true);
+
+CREATE POLICY "인증된 사용자가 상품 등록 가능"
+  ON products
+  FOR INSERT
+  WITH CHECK (auth.role() = 'authenticated' AND auth.uid() = user_id);
+
+CREATE POLICY "사용자가 자신의 상품만 수정 가능"
+  ON products
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "사용자가 자신의 상품만 삭제 가능"
+  ON products
+  FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
 ## 3. Storage 버킷 생성 (상품 이미지 업로드용)
 
 Supabase 대시보드에서 Storage를 설정해야 합니다:
