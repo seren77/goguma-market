@@ -38,6 +38,8 @@ export default function ProductCard({ product }: ProductCardProps) {
                   ? "bg-gray-800 text-white"
                   : product.status === "예약중"
                   ? "bg-orange-500 text-white"
+                  : product.status === "판매중"
+                  ? "bg-green-500 text-white"
                   : "bg-transparent"
               }`}
             >

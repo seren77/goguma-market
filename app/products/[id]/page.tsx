@@ -30,6 +30,7 @@ export default function ProductDetailPage({
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [productId, setProductId] = useState<number | null>(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -97,6 +98,37 @@ export default function ProductDetailPage({
   }
 
   const isOwner = currentUserId === product.userId;
+
+  const handleStatusChange = async (
+    newStatus: "판매중" | "예약중" | "판매완료"
+  ) => {
+    if (!productId || !isOwner) return;
+
+    setIsUpdatingStatus(true);
+
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ status: newStatus })
+        .eq("id", productId)
+        .eq("user_id", currentUserId);
+
+      if (error) {
+        throw error;
+      }
+
+      // 상태 업데이트
+      setProduct((prev) => {
+        if (!prev) return null;
+        return { ...prev, status: newStatus };
+      });
+    } catch (error) {
+      console.error("상태 변경 오류:", error);
+      alert("상태 변경에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   return (
     <div className="bg-gray-50 min-h-screen py-6 sm:py-8">
@@ -169,6 +201,31 @@ export default function ProductDetailPage({
                   })}
                 </span>
               </div>
+              {/* 상태 변경 (소유자만) */}
+              {isOwner && (
+                <div className="flex items-center text-sm">
+                  <span className="font-medium mr-2 text-gray-700">상태:</span>
+                  <select
+                    value={product.status}
+                    onChange={(e) =>
+                      handleStatusChange(
+                        e.target.value as "판매중" | "예약중" | "판매완료"
+                      )
+                    }
+                    disabled={isUpdatingStatus}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-60 disabled:cursor-not-allowed bg-white"
+                  >
+                    <option value="판매중">판매중</option>
+                    <option value="예약중">예약중</option>
+                    <option value="판매완료">판매완료</option>
+                  </select>
+                  {isUpdatingStatus && (
+                    <span className="ml-2 text-xs text-gray-500">
+                      저장 중...
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 상품 설명 */}
