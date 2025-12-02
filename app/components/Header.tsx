@@ -1,6 +1,32 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import UserMenu from "./UserMenu";
 
 export default function Header() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      setIsLoggedIn(!!data.session);
+    };
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <header className="w-full border-b border-gray-200 bg-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -13,20 +39,17 @@ export default function Header() {
             <span>🍠 고구마마켓</span>
           </Link>
 
-          {/* 로그인/회원가입 버튼 */}
+          {/* 네비게이션 */}
           <nav className="flex items-center gap-2 sm:gap-4">
-            <Link
-              href="/login"
-              className="px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base text-gray-700 hover:text-orange-600 transition-colors font-medium"
-            >
-              로그인
-            </Link>
-            <Link
-              href="/signup"
-              className="px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
-            >
-              회원가입
-            </Link>
+            {isLoggedIn && (
+              <Link
+                href="/products/new"
+                className="px-3 py-2 sm:px-4 sm:py-2 text-sm sm:text-base bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
+              >
+                상품 등록
+              </Link>
+            )}
+            <UserMenu />
           </nav>
         </div>
       </div>

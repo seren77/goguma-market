@@ -20,7 +20,47 @@ Supabase 대시보드의 SQL Editor에서 `supabase/schema.sql` 파일의 내용
 supabase db push
 ```
 
-## 3. 더미 데이터 삽입
+## 3. Storage 버킷 생성 (상품 이미지 업로드용)
+
+Supabase 대시보드에서 Storage를 설정해야 합니다:
+
+1. Supabase 대시보드 → Storage 메뉴로 이동
+2. "Create a new bucket" 클릭
+3. 버킷 이름: `product-images`
+4. Public bucket: **체크** (공개 버킷으로 설정)
+5. "Create bucket" 클릭
+
+### Storage 정책 설정
+
+버킷 생성 후, **Policies** 탭에서 다음 정책을 추가하세요:
+
+#### 정책 1: 업로드 허용 (인증된 사용자만)
+
+1. "New Policy" 클릭
+2. "For full customization" 선택
+3. Policy name: `Allow authenticated users to upload`
+4. Allowed operation: `INSERT` 선택
+5. Policy definition에 다음 코드 입력:
+```sql
+bucket_id = 'product-images' AND auth.role() = 'authenticated'
+```
+6. "Review" → "Save policy" 클릭
+
+#### 정책 2: 읽기 허용 (모든 사용자)
+
+1. "New Policy" 클릭
+2. "For full customization" 선택
+3. Policy name: `Allow public read access`
+4. Allowed operation: `SELECT` 선택
+5. Policy definition에 다음 코드 입력:
+```sql
+bucket_id = 'product-images'
+```
+6. "Review" → "Save policy" 클릭
+
+**참고:** 정책이 제대로 적용되지 않으면, 버킷의 "Public bucket" 옵션이 체크되어 있는지 확인하세요. 또한 정책 정의에서 따옴표가 정확한지 확인하세요.
+
+## 4. 더미 데이터 삽입
 
 의존성 설치 후 seed 스크립트를 실행하세요:
 
@@ -31,11 +71,12 @@ npm run seed
 
 또는 Supabase 대시보드의 SQL Editor에서 직접 데이터를 삽입할 수도 있습니다.
 
-## 4. 확인
+## 5. 확인
 
 개발 서버를 실행하고 메인 페이지에서 상품 목록이 표시되는지 확인하세요:
 
 ```bash
 npm run dev
 ```
+
 
